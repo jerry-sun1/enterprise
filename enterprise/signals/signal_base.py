@@ -155,6 +155,69 @@ class CommonSignal(Signal):
     def get_phicross(cls, signal1, signal2, params):
         return None
 
+class LookupLikelihood(object):
+    def __init__(self, pta, lookupdir, parfile):
+        """
+        Constructor for the lookup_likelihood object. You *must* create the pta_wide parfile before constructing this and
+        pass it in for this method to work properly.
+        """
+        #We want our directory structure to look like:
+        # /path/to/lookupdir/psrname/
+        #     -> pars.txt
+        #     -> data.txt
+
+        #   Then, we create a dictionary for each pulsar with a key being the pulsar name, and the value as a dictionary of psr_parname: psr_par_arr
+        #   NOTE: We can minimize the footprint of this by using a common array for rn_gamma, rn_amp and ramp_amp, and only have the ramp_t0s vary
+        #         for each pulsar. Each of the actual arrays are going to be approximately length 100. With 45 pulsars, 4 parameters, we expect to have
+        #         to store around 18000 floats in memory (1.44 MB) if we do this the expensive way. I think this is reasonable.
+
+        self.pta = pta
+        self.lookup_pars = {}
+        self.lookupdir = lookupdir
+
+        with open(parfile, 'r') as f:
+            self.pars = f.readlines().split()
+
+
+        #Loop through each pulsar and add its parameters to the lookup_table
+        signals = pta.pulsarmodels
+        for signal in signals:
+            psrname = signal.psrname
+            with open(self.lookupdir + psrname + '/pars.txt', 'r') as f:
+                psr_lookup_dict = {}
+                #Expecting the lookup_parfile to look have lines that look like:
+                #  'PARAMNAME;[lower_lim, upper_lim, num_elements]'
+
+                for line in f:
+                    par_name,par_vals = line.split(';')
+                    par_vals = np.fromstring(par_vals[1:-1], dtype = int, sep=',')
+
+                    # turn the stored elements into the actual np array holding the values
+                    par_arr = np.linspace(start=par_vals[0], stop=par_vals[1], num=par_vals[2])
+
+                    # Save the key value to the dictionary. Value is a tuple because the name of the pulsar is nontrivial to get (B vs J names different lengths)
+                    # So we just keep it in the dictionary to make things a little easier
+                    self.lookup_pars[par_name] = (psrname, par_arr)
+
+
+        #Now, we should have one lookup_pars dict with key=psrname, value=single_psr_lookup_dict
+        #The single pulsar lookup dictionary ought to have its own keys as key=par_name, val=par_arr
+
+
+    def __call__(self, xs):
+        """
+        Likelihood call. When this is called, we'll loop through the parameters of the pta and collect the likelihoods
+        """
+        #just a pure lookup for each pulsar in the set
+        loglike = 0
+        # First, we need to find the order for these xs to be in. This is based on the parfile in the chain directory.
+        # xs is just a list of Nparam*Npsr numbers. How do we turn separate these into chunks Nparam of without knowing
+        # beforehand what the number of parameters there are for each pulsar?
+        for par_name in self.lookup_pars:
+            loglike += 0
+        return loglike
+
+
 
 class LogLikelihood(object):
     def __init__(self, pta):
@@ -221,6 +284,7 @@ class LogLikelihood(object):
 
 class PTA(object):
     def __init__(self, init, lnlikelihood=LogLikelihood):
+        #I'm pretty sure init is a list of pulsars that we pass into the constructor
         if isinstance(init, collections.abc.Sequence):
             self._signalcollections = list(init)
         else:
