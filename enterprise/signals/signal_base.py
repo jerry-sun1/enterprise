@@ -156,10 +156,9 @@ class CommonSignal(Signal):
         return None
 
 class LookupLikelihood(object):
-    def __init__(self, pta, lookupdir, parfile):
+    def __init__(self, pta, lookupdir):
         """
-        Constructor for the lookup_likelihood object. You *must* create the pta_wide parfile before constructing this and
-        pass it in for this method to work properly.
+        Constructor for the lookup_likelihood object.
         """
         #We want our directory structure to look like:
         # /path/to/lookupdir/psrname/
@@ -171,8 +170,11 @@ class LookupLikelihood(object):
         #         for each pulsar. Each of the actual arrays are going to be approximately length 100. With 45 pulsars, 4 parameters, we expect to have
         #         to store around 18000 floats in memory (1.44 MB) if we do this the expensive way. I think this is reasonable.
 
+        #   Furthermore, the pars.txt files must match the pars the pta is actually instantiated with. There's going to be problems with the order that the
+        #   params are in I expect....
+
         self.pta = pta
-        self.lookup_pars = {}
+        self.pta_lookup = {}
         self.lookupdir = lookupdir
 
         with open(parfile, 'r') as f:
@@ -180,11 +182,11 @@ class LookupLikelihood(object):
 
 
         #Loop through each pulsar and add its parameters to the lookup_table
-        signals = pta.pulsarmodels
+        signals = self.pta.pulsarmodels
         for signal in signals:
             psrname = signal.psrname
             with open(self.lookupdir + psrname + '/pars.txt', 'r') as f:
-                psr_lookup_dict = {}
+                psr_lookup = {}
                 #Expecting the lookup_parfile to look have lines that look like:
                 #  'PARAMNAME;[lower_lim, upper_lim, num_elements]'
 
@@ -195,26 +197,78 @@ class LookupLikelihood(object):
                     # turn the stored elements into the actual np array holding the values
                     par_arr = np.linspace(start=par_vals[0], stop=par_vals[1], num=par_vals[2])
 
-                    # Save the key value to the dictionary. Value is a tuple because the name of the pulsar is nontrivial to get (B vs J names different lengths)
-                    # So we just keep it in the dictionary to make things a little easier
-                    self.lookup_pars[par_name] = (psrname, par_arr)
+                    #At the end, we save the pulsar name and the actual array of the parameter
+                    psr_lookup[par_name] = (psrname, par_arr)
+            self.pta_lookup[psrname] = psr_lookup
+
+        #At this point, we ought to have a dictionary pta_lookup that has:
+        # pta_lookup[psr1] == {psr1_param1:arr1 ; psr1_param2:arr2 ... } This should be correctly set up for
+        # the likelihood calls now.
+
+    def read_likelihood(self, lookup_file, line_no):
+        """
+        This function just looks up the likelihood (chain[-1]) from a likelihood lookup file
+        We expect that the lookup_files are large (10^8 lines), so we have to do some gymnastics to do this in less than O(numlines)
+        """
+        with open(lookup_file, 'rb') as f:
+            #find the number of bytes in one line
+            bytes_per_line = 0
+            while f.read(1) != b'\n':
+                bytes_per_line += 1
+            f.seek((bytes_per_line + 1) * line_no, 0)
+            output = f.read(bytes_per_line).decode() #decode the binary characters
+
+        chain_link = output.split('\t') #split by the tab characters
+        loglike = float(chain_link[-1])
+        return loglike
 
 
-        #Now, we should have one lookup_pars dict with key=psrname, value=single_psr_lookup_dict
-        #The single pulsar lookup dictionary ought to have its own keys as key=par_name, val=par_arr
 
+
+    def find_closest(mytarget, mylist):
+        """
+        Just a little utility function that spits out the index of the closest value to a target in some list
+        """
+        closest = 0
+        for idx in range(len(mylist)):
+            if abs(mytarget - mylist[idx]) < abs(mytarget - mylist[closest]):
+                closest = idx
+        return closest
 
     def __call__(self, xs):
         """
         Likelihood call. When this is called, we'll loop through the parameters of the pta and collect the likelihoods
         """
-        #just a pure lookup for each pulsar in the set
+        # just a pure lookup for each pulsar in the set
         loglike = 0
-        # First, we need to find the order for these xs to be in. This is based on the parfile in the chain directory.
-        # xs is just a list of Nparam*Npsr numbers. How do we turn separate these into chunks Nparam of without knowing
-        # beforehand what the number of parameters there are for each pulsar?
-        for par_name in self.lookup_pars:
-            loglike += 0
+        tracking_idx = 0
+        # We do this by looping through every pulsar and getting the corresponding indices and calculating the correct line number
+        # We'll just assume that the parameters all line up the right way.
+        for psrname in self.pta.pulsarmodels:
+            single_psr_dict = self.pta_lookup[psrname]
+            idxs = []
+            lens = [] #stores the length of each parameter vector for a fast search
+
+            #calculate the closest indices of each param in order and put it in the idxs list
+            for i in range(tracking_idx, tracking_idx + len(single_psr_dict)):
+                idxs.append(find_closest(xs[i], single_psr_dict[self.pta.params]))
+
+            #Now we have the indices of all the parameters that we care about for this pulsar
+            for key in single_psr_dict:
+                lens.append(len(single_psr_dict[key]))
+            #lens should have the same length as idx
+            line_no = 0
+            for i in range(len(idxs)):
+                line_change = idxs[i]
+                for j in range(i+1, len(idxs))
+                    line_change *= len(j) #for i = 0, this should give closest_1 * len(2)*len(3)*...*len(N)
+                line_no += line_change
+
+            loglike += read_likelihood(self.lookupdir + psrname + '/data.txt', line_no)
+            #advance the tracking_idx to the next pulsar's parameters
+            tracking_idx += len(single_psr_dict)
+
+
         return loglike
 
 
