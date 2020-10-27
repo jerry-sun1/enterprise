@@ -260,7 +260,7 @@ class LookupLikelihood(object):
             line_no = 0
             for i in range(len(idxs)):
                 line_change = idxs[i]
-                for j in range(i+1, len(idxs))
+                for j in range(i+1, len(idxs)):
                     line_change *= len(j) #for i = 0, this should give closest_1 * len(2)*len(3)*...*len(N)
                 line_no += line_change
 
@@ -337,7 +337,7 @@ class LogLikelihood(object):
 
 
 class PTA(object):
-    def __init__(self, init, lnlikelihood=LogLikelihood):
+    def __init__(self, init, lnlikelihood=LogLikelihood): #How exactly does the default value of lnlikelihood work?
         #I'm pretty sure init is a list of pulsars that we pass into the constructor
         if isinstance(init, collections.abc.Sequence):
             self._signalcollections = list(init)
@@ -423,6 +423,18 @@ class PTA(object):
 
     def get_lnlikelihood(self, params, **kwargs):
         return self._lnlikelihood(params, **kwargs)
+
+
+    @property
+    def _lookuplikelihood(self):
+        #instantiate on first use
+        if not hasattr(self, "_lnlike"):
+            self._lnlike = self.lnlikelihood(self)
+
+        return self._lnlike
+
+    def lookup_likelihood(self, params, **kwargs):
+        return self._lookuplikelihood(params, **args)
 
     @property
     def _commonsignals(self):
