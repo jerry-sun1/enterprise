@@ -185,7 +185,7 @@ class LookupLikelihood(object):
         signals = self.pta.pulsarmodels
         for signal in signals:
             psrname = signal.psrname
-            #print("Looking for parfile in: {}".format(self.lookupdir + psrname + '/pars.txt'))
+            print("Looking for parfile in: {}".format(self.lookupdir + psrname + '/pars.txt'))
             with open(self.lookupdir + psrname + '/pars.txt', 'r') as f:
                 psr_lookup = {}
                 #Expecting the lookup_parfile to look have lines that look like:
@@ -218,7 +218,7 @@ class LookupLikelihood(object):
             bytes_per_line = 0
             while f.read(1) != b'\n':
                 bytes_per_line += 1
-            f.seek((bytes_per_line + 1) * line_no, 0)
+            f.seek((bytes_per_line+1) * (line_no-1), 0)
             output = f.read(bytes_per_line).decode() #decode the binary characters
 
         chain_link = output.split('\t') #split by the tab characters
@@ -259,21 +259,26 @@ class LookupLikelihood(object):
             for i in range(len(single_psr_dict)):
                 idxs.append(self.find_closest(xs[tracking_idx + i], single_psr_dict[self.pta.param_names[i]][1]))
 
+            #print("I think the closest values to xs: {}\n are in the indices {}".format(xs, idxs))
             #Now we have the indices of all the parameters that we care about for this pulsar
             for key in single_psr_dict:
-                lens.append(len(single_psr_dict[key]))
+                lens.append(len(single_psr_dict[key][1]))
             #lens should have the same length as idx
             line_no = 0
             for i in range(len(idxs)):
                 line_change = idxs[i]
-                for j in range(i+1, len(idxs)):
-                    line_change *= j #for i = 0, this should give closest_1 * len(2)*len(3)*...*len(N)
+                for j in range(0, i):
+                    line_change *= lens[j] #for i = 0, this should give closest_1 * len(2)*len(3)*...*len(N)
                 line_no += line_change
 
-            loglike += self.read_likelihood(self.lookupdir + psrname + '/{}_lookup.txt'.format(psrname), line_no)
+            #print("I've calculated a line number of: {}".format(line_no))
+            #print("The indices: {}\nThe lengths: {}".format(idxs, lens))
+
+            single_loglike = self.read_likelihood(self.lookupdir + psrname + '/{}_lookup.txt'.format(psrname), line_no)
+            #print("The loglikelihood on line {} was found to be {}".format(line_no, single_loglike))
+            loglike += single_loglike
             #advance the tracking_idx to the next pulsar's parameters
             tracking_idx += len(single_psr_dict)
-
 
         return loglike
 
