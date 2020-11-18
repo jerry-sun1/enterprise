@@ -156,7 +156,7 @@ class CommonSignal(Signal):
         return None
 
 class LookupLikelihood(object):
-    def __init__(self, pta, lookupdir = '/home/nima/nanograv/11yr/single_psr_lookup/', parfile = '/home/nima/nanograv/11yr/scratch_data/pars.txt'):
+    def __init__(self, pta, lookupdir = '/home/nima/nanograv/11yr_burst_factorizedlikelihood/single_psr_lookup_v2/', parfile = '/home/nima/nanograv/11yr_burst_factorizedlikelihood/multi_psr_pta/pars.txt'):
         """
         Constructor for the lookup_likelihood object.
         """
@@ -180,6 +180,8 @@ class LookupLikelihood(object):
         with open(parfile, 'r') as f:
             self.pars = f.read().split()
 
+        print(self.pars)
+
 
         #Loop through each pulsar and add its parameters to the lookup_table
         signals = self.pta.pulsarmodels
@@ -195,9 +197,6 @@ class LookupLikelihood(object):
                     par_name,par_vals = line.split(';')
                     #print("parameter values for {}: {}".format(par_name,   par_vals))
                     par_vals = np.fromstring(par_vals, sep=',')
-                    #print("par_vals after turning into array: {}".format(par_vals))
-
-                    # turn the stored elements into the actual np array holding the values
                     par_arr = np.linspace(start=int(par_vals[0]), stop=int(par_vals[1]), num=int(par_vals[2]))
 
                     #At the end, we save the pulsar name and the actual array of the parameter
@@ -243,12 +242,13 @@ class LookupLikelihood(object):
     def __call__(self, xs):
         """
         Likelihood call. When this is called, we'll loop through the parameters of the pta and collect the likelihoods
+
+        :param xs: List of parameter values of the PTA
         """
         # just a pure lookup for each pulsar in the set
         loglike = 0
-        tracking_idx = 0
         # We do this by looping through every pulsar and getting the corresponding indices and calculating the correct line number
-        # We'll just assume that the parameters all line up the right way.
+        # We'll just assume that the parameters all line up the right way for a single pulsar.
         for signal in self.pta.pulsarmodels:
             psrname = signal.psrname
             single_psr_dict = self.pta_lookup[psrname]
@@ -256,8 +256,12 @@ class LookupLikelihood(object):
             lens = [] #stores the length of each parameter vector for a fast search
 
             #calculate the closest indices of each param in order and put it in the idxs list
-            for i in range(len(single_psr_dict)):
-                idxs.append(self.find_closest(xs[tracking_idx + i], single_psr_dict[self.pta.param_names[i]][1]))
+            for key_param in single_psr_dict:
+
+                #print("Looking for param from this pta: {}".format(key_param))
+                idx_ptaparam = self.pta.param_names.index(key_param)
+                #print("Mapping to param from sgl psr: {}".format(self.pta.param_names.index(key_param)))
+                idxs.append(self.find_closest(xs[idx_ptaparam], single_psr_dict[key_param][1])) ## the hardcoded 1 here is bc the 0th entry is the parname
 
             #print("I think the closest values to xs: {}\n are in the indices {}".format(xs, idxs))
             #Now we have the indices of all the parameters that we care about for this pulsar
@@ -278,7 +282,6 @@ class LookupLikelihood(object):
             #print("The loglikelihood on line {} was found to be {}".format(line_no, single_loglike))
             loglike += single_loglike
             #advance the tracking_idx to the next pulsar's parameters
-            tracking_idx += len(single_psr_dict)
 
         return loglike
 

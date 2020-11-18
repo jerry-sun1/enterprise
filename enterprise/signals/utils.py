@@ -662,12 +662,12 @@ def bwm_delay(toas, pos, log10_h=-14.0, cos_gwtheta=0.0, gwphi=0.0, gwpol=0.0, t
 
 
 @function
-def ramp_delay(toas, pos, log10_A=-15, t0=55000):
+def ramp_delay(toas, pos, sign, log10_A=-15, t0=55000):
     A = 10 ** log10_A
     t0 *= const.day
     # Return the time-series for the pulsar
     heaviside = lambda x: 0.5 * (np.sign(x) + 1)
-    return A * heaviside(toas - t0) * (toas - t0)
+    return A * np.sign(sign) * heaviside(toas - t0) * (toas - t0)
 
 
 @function
