@@ -156,9 +156,11 @@ class CommonSignal(Signal):
         return None
 
 class LookupLikelihood(object):
-    def __init__(self, pta, lookupdir = '/home/nima/nanograv/11yr_burst_factorizedlikelihood/single_psr_lookup_v2/', parfile = '/home/nima/nanograv/11yr_burst_factorizedlikelihood/multi_psr_pta/pars.txt'):
+    def __init__(self, pta, lookupdir):
         """
         Constructor for the lookup_likelihood object.
+        Must pass in the lookup directory in order to use this.
+        This class was written by Jerry Sun for the Burst-With-Memory search. It might require further finagling to get to work with other searches.
         """
         #We want our directory structure to look like:
         # /path/to/lookupdir/psrname/
@@ -170,17 +172,9 @@ class LookupLikelihood(object):
         #         for each pulsar. Each of the actual arrays are going to be approximately length 100. With 45 pulsars, 4 parameters, we expect to have
         #         to store around 18000 floats in memory (1.44 MB) if we do this the expensive way. I think this is reasonable.
 
-        #   Furthermore, the pars.txt files must match the pars the pta is actually instantiated with. There's going to be problems with the order that the
-        #   params are in I expect....
-
         self.pta = pta
         self.pta_lookup = {}
         self.lookupdir = lookupdir
-
-        with open(parfile, 'r') as f:
-            self.pars = f.read().split()
-
-        print(self.pars)
 
 
         #Loop through each pulsar and add its parameters to the lookup_table
@@ -351,14 +345,30 @@ class LogLikelihood(object):
 
 
 class PTA(object):
-    def __init__(self, init, lnlikelihood=LookupLikelihood): #How exactly does the default value of lnlikelihood work?
-        #I'm pretty sure init is a list of pulsars that we pass into the constructor
+    def __init__(self, init, lnlikelihood=LogLikelihood,lookupdir=None):
+        """
+        Constructor for the PTA object
+        :param init:
+            List of pulsars to construct the PTA from
+        :param lnlikelihood:
+            Which likelihood to use. To use the LookupLikelihood, you must pass in a lookup directory.
+        :param lookupdir:
+            For now, the directory structure required to use this is
+            /path/to/lookupdir/
+                -> <psrname_i>
+                    -> <psrname_i>_lookup.txt
+                    -> pars.txt
+
+        :return:
+            A PTA object instantiated with the list of pulsars and the chosen method for Likelihood calculation
+        """
         if isinstance(init, collections.abc.Sequence):
             self._signalcollections = list(init)
         else:
             self._signalcollections = [init]
 
         self.lnlikelihood = lnlikelihood
+        self.lookupdir = lookupdir
 
         # set signal dictionary
         self._set_signal_dict()
@@ -431,7 +441,12 @@ class PTA(object):
     def _lnlikelihood(self):
         # instantiate on first use
         if not hasattr(self, "_lnlike"):
-            self._lnlike = self.lnlikelihood(self)
+            if self.lnlikelihood == LogLikelihood:
+                self._lnlike = self.lnlikelihood(self)
+                #print("I think you want a loglikelihood in signal_base._lnlikelihood")
+            else:
+                self._lnlike = self.lnlikelihood(self, self.lookupdir)
+                #print("I think you want a lookuplikelihood in signal_base._lnlikelihood")
 
         return self._lnlike
 
