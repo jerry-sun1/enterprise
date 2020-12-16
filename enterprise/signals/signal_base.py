@@ -156,11 +156,18 @@ class CommonSignal(Signal):
         return None
 
 class LookupLikelihood(object):
-    def __init__(self, pta, lookupdir):
+    def __init__(self, pta, lookupdir, condenser=None, pars_to_condense=None):
         """
         Constructor for the lookup_likelihood object.
         Must pass in the lookup directory in order to use this.
         This class was written by Jerry Sun for the Burst-With-Memory search. It might require further finagling to get to work with other searches.
+
+        This is currently awful documentation and will be fixed later.
+
+        The variable condenser is only necessary if you're sampling a space that's not exactly identical to the one your lookup tables are built on.
+        You should pass in a function that allows you to map the space you're sampling onto your lookup-table space.
+
+
         """
         #We want our directory structure to look like:
         # /path/to/lookupdir/psrname/
@@ -175,6 +182,8 @@ class LookupLikelihood(object):
         self.pta = pta
         self.pta_lookup = {}
         self.lookupdir = lookupdir
+
+        self.condenser=condenser
 
 
         #Loop through each pulsar and add its parameters to the lookup_table
@@ -203,7 +212,7 @@ class LookupLikelihood(object):
 
     def read_likelihood(self, lookup_file, line_no):
         """
-        This function just looks up the likelihood (chain[-1]) from a likelihood lookup file
+        This function just looks up the likelihood from a likelihood lookup file
         We expect that the lookup_files are large (10^8 lines), so we have to do some gymnastics to do this in less than O(numlines)
         """
         with open(lookup_file, 'rb') as f:
@@ -214,10 +223,9 @@ class LookupLikelihood(object):
             f.seek((bytes_per_line+1) * (line_no-1), 0)
             output = f.read(bytes_per_line).decode() #decode the binary characters
 
-        chain_link = output.split('\t') #split by the tab characters
-        loglike = float(chain_link[-1])
-        return loglike
 
+        loglike = float(output)
+        return loglike
 
 
 
@@ -243,22 +251,31 @@ class LookupLikelihood(object):
         loglike = 0
         # We do this by looping through every pulsar and getting the corresponding indices and calculating the correct line number
         # We'll just assume that the parameters all line up the right way for a single pulsar.
-        for signal in self.pta.pulsarmodels:
+        for signal in self.pta.pulsarmodels: # signal is a SignalCollection object, not a pulsar
             psrname = signal.psrname
             single_psr_dict = self.pta_lookup[psrname]
+
+
             idxs = []
             lens = [] #stores the length of each parameter vector for a fast search
 
             #calculate the closest indices of each param in order and put it in the idxs list
             for key_param in single_psr_dict:
-
                 #print("Looking for param from this pta: {}".format(key_param))
-                idx_ptaparam = self.pta.param_names.index(key_param)
                 #print("Mapping to param from sgl psr: {}".format(self.pta.param_names.index(key_param)))
-                idxs.append(self.find_closest(xs[idx_ptaparam], single_psr_dict[key_param][1])) ## the hardcoded 1 here is bc the 0th entry is the parname
+                if self.condenser is not None: #we'll need to re-map the current parameters to match the param from the sgl-psr table
+                    #we'll hold a temporary xs in memory to
+                    new_xs, new_param_names = self.condenser(xs, signal.psr, self.pta.param_names)
+                else:
+                    new_xs = xs
+                    new_param_names = self.pta.param_names
+
+                idx_ptaparam = new_param_names.index(key_param)
+                idxs.append(self.find_closest(new_xs[idx_ptaparam], single_psr_dict[key_param][1])) ## the hardcoded 1 here is bc the 0th entry is the parname
 
             #print("I think the closest values to xs: {}\n are in the indices {}".format(xs, idxs))
             #Now we have the indices of all the parameters that we care about for this pulsar
+            #We need to calculate which line the number we want ought to be on
             for key in single_psr_dict:
                 lens.append(len(single_psr_dict[key][1]))
             #lens should have the same length as idx
@@ -278,6 +295,7 @@ class LookupLikelihood(object):
             #advance the tracking_idx to the next pulsar's parameters
 
         return loglike
+
 
 
 
@@ -370,6 +388,7 @@ class PTA(object):
         self.lnlikelihood = lnlikelihood
         self.lookupdir = lookupdir
 
+
         # set signal dictionary
         self._set_signal_dict()
 
@@ -452,7 +471,6 @@ class PTA(object):
 
     def get_lnlikelihood(self, params, **kwargs):
         return self._lnlikelihood(params, **kwargs)
-
 
     @property
     def _lookuplikelihood(self):
@@ -853,6 +871,7 @@ def SignalCollection(metasignals):
 
         def __init__(self, psr):
             self.psrname = psr.name
+            self.psr = psr
             # instantiate all the signals with a pulsar
             self._signals = [metasignal(psr) for metasignal in self._metasignals]
 

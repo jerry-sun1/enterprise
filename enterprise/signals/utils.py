@@ -667,8 +667,9 @@ def ramp_delay(toas, pos, sign, log10_A=-15, t0=55000):
     t0 *= const.day
     # Return the time-series for the pulsar
     heaviside = lambda x: 0.5 * (np.sign(x) + 1)
-    return A * np.sign(sign) * heaviside(toas - t0) * (toas - t0)
 
+    #return 0 #Fix the return to 0 in order to test what the heck is wrong with red noise detection in bwm
+    return A * np.sign(sign) * heaviside(toas - t0) * (toas - t0)
 
 @function
 def create_quantization_matrix(toas, dt=1, nmin=2):
